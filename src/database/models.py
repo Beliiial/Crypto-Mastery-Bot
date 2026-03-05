@@ -19,7 +19,8 @@ class User(Base):
     trial_received: Mapped[bool] = mapped_column(Boolean, default=False)
     trial_reminded: Mapped[bool] = mapped_column(Boolean, default=False)
     balance: Mapped[float] = mapped_column(Float, default=0.0)
-    sub_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    subscription_end: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    has_active_subscription: Mapped[bool] = mapped_column(Boolean, default=False)
     last_application: Mapped[Optional[str]] = mapped_column(Text)
 
     payments: Mapped[List["Payment"]] = relationship(back_populates="user")

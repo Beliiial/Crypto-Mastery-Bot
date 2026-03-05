@@ -39,23 +39,22 @@ async def check_pending_payments(bot: Bot):
 
 async def check_subscriptions(bot: Bot):
     async with async_session() as session:
-        # Find users with expired subscriptions
         now = datetime.utcnow()
-        stmt = select(User).where(User.sub_expires_at < now)
+        stmt = select(User).where(
+            User.has_active_subscription == True,
+            User.subscription_end != None,
+            User.subscription_end < now
+        )
         result = await session.execute(stmt)
         expired_users = result.scalars().all()
 
         for user in expired_users:
             try:
-                # Remove from channel (unban after ban to just remove)
-                # await bot.ban_chat_member(chat_id=config.CHANNEL_ID, user_id=user.telegram_id)
-                # await bot.unban_chat_member(chat_id=config.CHANNEL_ID, user_id=user.telegram_id)
-                
                 await bot.send_message(
                     user.telegram_id, 
                     "⚠️ Ваша подписка истекла. Продлите её в личном кабинете, чтобы сохранить доступ к каналу!"
                 )
-                user.sub_expires_at = None
+                user.has_active_subscription = False
                 await session.commit()
             except Exception as e:
                 logging.error(f"Error handling expired sub for {user.telegram_id}: {e}")
@@ -70,7 +69,7 @@ async def send_reminders(bot: Bot):
         stmt = select(User).where(
             User.trial_received == True,
             User.trial_reminded == False,
-            User.sub_expires_at == None,
+            User.has_active_subscription == False,
             User.created_at < cutoff_time
         )
         result = await session.execute(stmt)
@@ -84,52 +83,29 @@ async def send_reminders(bot: Bot):
                     key="reminder_trial_24h"
                 )
                 user.trial_reminded = True
-                # Commit immediately to save state
                 await session.commit()
             except Exception as e:
                 logging.error(f"Failed to send trial reminder to {user.telegram_id}: {e}")
 
-        # 2. Subscription Expiry (3 days)
-        target_3d = now + timedelta(days=3)
-        window_start_3d = target_3d - timedelta(minutes=30)
-        window_end_3d = target_3d + timedelta(minutes=30)
-        
-        stmt_3d = select(User).where(
-            User.sub_expires_at >= window_start_3d,
-            User.sub_expires_at <= window_end_3d
-        )
-        res_3d = await session.execute(stmt_3d)
-        users_3d = res_3d.scalars().all()
-        
-        for user in users_3d:
-            try:
-                await template_manager.send_template(
-                    bot=bot,
-                    chat_id=user.telegram_id,
-                    key="reminder_sub_3d"
-                )
-            except: pass
-            
-        # 3. Subscription Expiry (1 day)
-        target_1d = now + timedelta(days=1)
-        window_start_1d = target_1d - timedelta(minutes=30)
-        window_end_1d = target_1d + timedelta(minutes=30)
-        
-        stmt_1d = select(User).where(
-            User.sub_expires_at >= window_start_1d,
-            User.sub_expires_at <= window_end_1d
-        )
-        res_1d = await session.execute(stmt_1d)
-        users_1d = res_1d.scalars().all()
-        
-        for user in users_1d:
-            try:
-                await template_manager.send_template(
-                    bot=bot,
-                    chat_id=user.telegram_id,
-                    key="reminder_sub_1d"
-                )
-            except: pass
+        # 2. Subscription Expiry Reminders
+        for days_left in [1, 3]:
+            target_date = now + timedelta(days=days_left)
+            stmt = select(User).where(
+                User.subscription_end != None,
+                User.subscription_end >= target_date,
+                User.subscription_end < target_date + timedelta(days=1)
+            )
+            result = await session.execute(stmt)
+            users_to_remind = result.scalars().all()
+
+            for user in users_to_remind:
+                try:
+                    await bot.send_message(
+                        user.telegram_id,
+                        f"⏳ Ваша VIP-подписка истекает через {days_left} дня(ей). Не забудьте продлить её, чтобы сохранить доступ ко всем материалам!"
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to send expiry reminder to {user.telegram_id}: {e}")
 
 def setup_scheduler(bot: Bot):
     scheduler = AsyncIOScheduler()

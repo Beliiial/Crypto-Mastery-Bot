@@ -4,7 +4,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from src.utils.config import config
 from src.handlers.users import start, payments, profile, support, mentorship
-from src.handlers.admin import menu, broadcast, content
+from src.handlers.admin import menu, broadcast, content, payments as admin_payments
+from src.handlers.admins import access
 from src.database.db import init_db
 from src.utils.scheduler import setup_scheduler
 
@@ -30,6 +31,8 @@ async def main():
     dp.include_router(menu.router)
     dp.include_router(broadcast.router)
     dp.include_router(content.router)
+    dp.include_router(admin_payments.router)
+    dp.include_router(access.router)
     dp.include_router(start.router)
     dp.include_router(payments.router)
     dp.include_router(profile.router)

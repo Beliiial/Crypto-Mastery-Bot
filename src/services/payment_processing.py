@@ -87,10 +87,12 @@ async def _handle_subscription_payment(bot: Bot, session: AsyncSession, user: Us
     
     # Extend subscription
     now = datetime.utcnow()
-    if user.sub_expires_at and user.sub_expires_at > now:
-        user.sub_expires_at += timedelta(days=days)
+    if user.subscription_end and user.subscription_end > now:
+        user.subscription_end += timedelta(days=days)
     else:
-        user.sub_expires_at = now + timedelta(days=days)
+        user.subscription_end = now + timedelta(days=days)
+    
+    user.has_active_subscription = True
     
     # Generate invite link
     try:

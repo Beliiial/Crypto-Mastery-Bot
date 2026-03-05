@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     CHANNEL_ID: int
     STUDENT_CHAT_ID: int = 0
     TRIAL_FILE_ID: str = "DEFAULT_FILE_ID"
+    TON_WALLET: str = "UQBZd9VWbTypz4dy7D5-7Ve7nPTS9eKZ-k9AH3H2hf8rewE5"  # USDT TON and TON network
 
     @property
     def admins(self) -> List[int]:
