@@ -12,7 +12,8 @@ class Settings(BaseSettings):
     TRIAL_FILE_ID: str = "DEFAULT_FILE_ID"
     TON_WALLET: str = "UQBZd9VWbTypz4dy7D5-7Ve7nPTS9eKZ-k9AH3H2hf8rewE5"  # USDT TON and TON network
     WEBAPP_API_HOST: str = "0.0.0.0"
-    WEBAPP_API_PORT: int = 8000
+    WEBAPP_API_PORT: int = 8080
+    WEBAPP_API_URL: str = "http://localhost:8080"
 
     @property
     def admins(self) -> List[int]:
