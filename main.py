@@ -767,7 +767,8 @@ async def start_webapp_api(bot: Bot):
         
         handler = routes.get(normalized_path)
         if handler:
-            if request.method == "POST":
+            # Allow POST for all API handlers, and handle OPTIONS via middleware
+            if request.method in ["POST", "GET"]:
                 return await handler(request)
             return web.json_response({"ok": False, "error": "Method Not Allowed"}, status=405)
             
