@@ -340,9 +340,11 @@ async def handle_get_payments(request: web.Request):
         
         # Get users for names
         user_ids = [p.user_id for p in payments]
-        user_stmt = select(User).where(User.telegram_id.in_(user_ids))
-        user_result = await session.execute(user_stmt)
-        users_map = {u.telegram_id: u.full_name or u.username or "User" for u in user_result.scalars().all()}
+        users_map = {}
+        if user_ids:
+            user_stmt = select(User).where(User.telegram_id.in_(user_ids))
+            user_result = await session.execute(user_stmt)
+            users_map = {u.telegram_id: u.full_name or u.username or "User" for u in user_result.scalars().all()}
         
         payments_data = []
         for p in payments:
@@ -680,27 +682,6 @@ async def handle_admin_broadcast(request: web.Request):
 
     return web.json_response({"ok": True, "sent_to": len(user_ids)})
 
-@web.middleware
-async def cors_middleware(request: web.Request, handler):
-    if request.method == "OPTIONS":
-        return web.Response(headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
-            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-            "Access-Control-Max-Age": "86400"
-        })
-    try:
-        response = await handler(request)
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
-        response.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
-        return response
-    except Exception as e:
-        logging.error(f"Request failed: {e}")
-        return web.json_response({"ok": False, "error": str(e)}, status=500, headers={
-            "Access-Control-Allow-Origin": "*"
-        })
-
 async def handle_health(request: web.Request):
     return web.json_response({"status": "healthy", "uptime": "ok"})
 
@@ -749,12 +730,21 @@ async def start_webapp_api(bot: Bot):
     app.middlewares.append(cors_middleware)
     app.middlewares.append(logging_middleware)
 
+    # Static files for uploads
+    upload_dir = "uploads"
+    if not os.path.exists(upload_dir):
+        os.makedirs(upload_dir)
+    app.router.add_static("/uploads/", upload_dir)
+
     # Generic dispatcher to handle multiple slashes and route correctly
     async def api_dispatcher(request):
         import re
         # Normalize path: remove any number of leading slashes and collapse internal ones
         # Example: ////api/profile -> /api/profile
-        normalized_path = "/" + re.sub(r'/+', '/', request.path).lstrip('/')
+        path = request.path
+        normalized_path = "/" + re.sub(r'/+', '/', path).lstrip('/')
+        if len(normalized_path) > 1:
+            normalized_path = normalized_path.rstrip('/')
         
         routes = {
             "/": handle_root,
@@ -777,19 +767,17 @@ async def start_webapp_api(bot: Bot):
         if handler:
             # Allow POST/GET for all API handlers, and handle OPTIONS via middleware
             if request.method in ["POST", "GET"]:
-                return await handler(request)
+                try:
+                    return await handler(request)
+                except Exception as e:
+                    logging.error(f"Handler error for {normalized_path}: {e}", exc_info=True)
+                    return web.json_response({"ok": False, "error": str(e)}, status=500)
             return web.json_response({"ok": False, "error": "Method Not Allowed"}, status=405)
             
         return web.json_response({"ok": False, "error": f"Not Found: {normalized_path}"}, status=404)
 
     # Catch all /api requests with any number of slashes
     app.router.add_route("*", "/{tail:.*}", api_dispatcher)
-    
-    # Static files for uploads
-    upload_dir = "uploads"
-    if not os.path.exists(upload_dir):
-        os.makedirs(upload_dir)
-    app.router.add_static("/uploads/", upload_dir)
     
     runner = web.AppRunner(app)
     await runner.setup()
