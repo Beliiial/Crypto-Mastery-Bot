@@ -777,7 +777,10 @@ async def start_webapp_api(bot: Bot):
     app.router.add_route("*", "/{tail:.*}", api_dispatcher)
     
     # Static files for uploads
-    app.router.add_static("/uploads/", "uploads/")
+    upload_dir = "uploads"
+    if not os.path.exists(upload_dir):
+        os.makedirs(upload_dir)
+    app.router.add_static("/uploads/", upload_dir)
     
     runner = web.AppRunner(app)
     await runner.setup()
