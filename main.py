@@ -701,6 +701,12 @@ async def cors_middleware(request: web.Request, handler):
             "Access-Control-Allow-Origin": "*"
         })
 
+async def handle_health(request: web.Request):
+    return web.json_response({"status": "healthy", "uptime": "ok"})
+
+async def handle_root(request: web.Request):
+    return web.json_response({"message": "Gatee Bot API is running"})
+
 async def start_webapp_api(bot: Bot):
     app = web.Application()
     app["bot"] = bot
@@ -751,6 +757,8 @@ async def start_webapp_api(bot: Bot):
         normalized_path = "/" + re.sub(r'/+', '/', request.path).lstrip('/')
         
         routes = {
+            "/": handle_root,
+            "/health": handle_health,
             "/api/profile": handle_profile,
             "/api/profile/update": handle_profile_update,
             "/api/payment/manual": handle_payment_manual,
@@ -767,7 +775,7 @@ async def start_webapp_api(bot: Bot):
         
         handler = routes.get(normalized_path)
         if handler:
-            # Allow POST for all API handlers, and handle OPTIONS via middleware
+            # Allow POST/GET for all API handlers, and handle OPTIONS via middleware
             if request.method in ["POST", "GET"]:
                 return await handler(request)
             return web.json_response({"ok": False, "error": "Method Not Allowed"}, status=405)
