@@ -33,6 +33,18 @@ async def init_db():
             except Exception:
                 pass # Column likely exists
 
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN avatar VARCHAR(10)"))
+                logging.info("Added avatar column to users table")
+            except Exception:
+                pass # Column likely exists
+
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN funnel_step INTEGER DEFAULT 0"))
+                logging.info("Added funnel_step column to users table")
+            except Exception:
+                pass # Column likely exists
+
 async def get_session() -> AsyncSession:
     async with async_session() as session:
         yield session

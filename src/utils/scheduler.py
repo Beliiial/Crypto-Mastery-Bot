@@ -54,6 +54,12 @@ async def check_subscriptions(bot: Bot):
                     user.telegram_id, 
                     "⚠️ Ваша подписка истекла. Продлите её в личном кабинете, чтобы сохранить доступ к каналу!"
                 )
+                if config.CHANNEL_ID != 0:
+                    try:
+                        await bot.ban_chat_member(chat_id=config.CHANNEL_ID, user_id=user.telegram_id)
+                        await bot.unban_chat_member(chat_id=config.CHANNEL_ID, user_id=user.telegram_id)
+                    except Exception as e:
+                        logging.error(f"Error removing user {user.telegram_id} from channel: {e}")
                 user.has_active_subscription = False
                 await session.commit()
             except Exception as e:
@@ -87,7 +93,34 @@ async def send_reminders(bot: Bot):
             except Exception as e:
                 logging.error(f"Failed to send trial reminder to {user.telegram_id}: {e}")
 
-        # 2. Subscription Expiry Reminders
+        # 2. Auto Funnel Reminders (1, 3, 7 days after registration)
+        funnel_days = {
+            1: {"step": 1, "text": "👋 Привет! Прошел день с твоей регистрации. Ты уже успел посмотреть наши бесплатные уроки? Самое время начать обучение! 🚀"},
+            3: {"step": 2, "text": "🔥 Специальное предложение! Прошло 3 дня, и мы дарим тебе скидку 10% на первую подписку по промокоду: START10. Не упусти шанс! 🎁"},
+            7: {"step": 3, "text": "👀 Мы заметили, что ты всё еще не с нами. Сегодня последний день действия твоей персональной скидки. Начни свой путь в криптоарбитраже прямо сейчас! 💎"}
+        }
+
+        for days, info in funnel_days.items():
+            cutoff = now - timedelta(days=days)
+            # Users who registered > N days ago, have no sub, and are at previous funnel step
+            stmt = select(User).where(
+                User.has_active_subscription == False,
+                User.created_at < cutoff,
+                User.funnel_step == info["step"] - 1
+            )
+            result = await session.execute(stmt)
+            funnel_users = result.scalars().all()
+            
+            for user in funnel_users:
+                try:
+                    await bot.send_message(user.telegram_id, info["text"])
+                    user.funnel_step = info["step"]
+                    await session.commit()
+                    logging.info(f"Sent funnel step {info['step']} to {user.telegram_id}")
+                except Exception as e:
+                    logging.error(f"Failed to send funnel step {info['step']} to {user.telegram_id}: {e}")
+
+        # 3. Subscription Expiry Reminders
         for days_left in [1, 3]:
             target_date = now + timedelta(days=days_left)
             stmt = select(User).where(

@@ -13,6 +13,7 @@ class User(Base):
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
     username: Mapped[Optional[str]] = mapped_column(String(32))
     full_name: Mapped[str] = mapped_column(String(128))
+    avatar: Mapped[Optional[str]] = mapped_column(String(10), default=None) # Emoji or char
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     referral_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("users.telegram_id"))
@@ -21,9 +22,11 @@ class User(Base):
     balance: Mapped[float] = mapped_column(Float, default=0.0)
     subscription_end: Mapped[Optional[datetime]] = mapped_column(DateTime)
     has_active_subscription: Mapped[bool] = mapped_column(Boolean, default=False)
+    funnel_step: Mapped[int] = mapped_column(BigInteger, default=0) # 0, 1 (1 day), 2 (3 days), 3 (7 days)
     last_application: Mapped[Optional[str]] = mapped_column(Text)
 
     payments: Mapped[List["Payment"]] = relationship(back_populates="user")
+    messages: Mapped[List["Message"]] = relationship(back_populates="user")
 
 class Payment(Base):
     __tablename__ = "payments"
@@ -38,6 +41,20 @@ class Payment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="payments")
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id"))
+    mentor_id: Mapped[str] = mapped_column(String(32)) # support, gatee, agwwee
+    text: Mapped[Optional[str]] = mapped_column(Text)
+    media_url: Mapped[Optional[str]] = mapped_column(Text) # URL to photo
+    sender: Mapped[str] = mapped_column(String(10)) # user, mentor
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship(back_populates="messages")
 
 class Setting(Base):
     __tablename__ = "settings"

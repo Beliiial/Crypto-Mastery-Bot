@@ -31,24 +31,47 @@ async def cmd_start(message: types.Message):
         stmt = select(User).where(User.telegram_id == message.from_user.id)
         result = await session.execute(stmt)
         user = result.scalar_one_or_none()
+        is_new = False
 
         if not user:
-            user = User(
-                telegram_id=message.from_user.id,
-                username=message.from_user.username,
-                full_name=message.from_user.full_name,
-                referral_id=referral_id
-            )
-            session.add(user)
-            await session.commit()
-            logging.info(f"New user: {message.from_user.id} (ref: {referral_id})")
+            is_new = True
+            try:
+                user = User(
+                    telegram_id=message.from_user.id,
+                    username=message.from_user.username,
+                    full_name=message.from_user.full_name,
+                    referral_id=referral_id
+                )
+                session.add(user)
+                await session.commit()
+                logging.info(f"New user created: {message.from_user.id}")
+            except Exception as e:
+                logging.error(f"Failed to create user {message.from_user.id}: {e}")
+                # Try to fetch again in case of race condition
+                result = await session.execute(stmt)
+                user = result.scalar_one_or_none()
+                if user:
+                    is_new = False
 
-        await template_manager.send_template(
-            bot=message.bot,
-            chat_id=message.chat.id,
-            key="start_welcome",
-            reply_markup=main_menu(has_trial=user.trial_received)
-        )
+        if is_new:
+            # Registration offer for new users
+            logging.info(f"Showing registration offer for new user {message.from_user.id}")
+            await message.answer(
+                f"👋 **Привет, {message.from_user.first_name}!**\n\n"
+                "Ты успешно зарегистрирован в Gatee Bot. Мы — команда экспертов в арбитраже криптовалют.\n\n"
+                "🎁 Для старта мы подготовили для тебя **бесплатный пробный урок**!\n"
+                "Жми кнопку ниже, чтобы забрать его 👇",
+                reply_markup=main_menu(has_trial=False)
+            )
+        else:
+            logging.info(f"Showing main menu for existing user {message.from_user.id}")
+            if user:
+                await template_manager.send_template(
+                    bot=message.bot,
+                    chat_id=message.chat.id,
+                    key="start_welcome",
+                    reply_markup=main_menu(has_trial=user.trial_received)
+                )
 
 @router.message(F.web_app_data)
 async def process_webapp_data(message: types.Message):
@@ -109,19 +132,20 @@ async def process_webapp_data(message: types.Message):
                 await message.answer("⚠️ Выбранный тариф не найден.")
 
         elif action == "manual_payment":
-            method = data.get("method")
+            method = data.get("method") or "unknown"
+            amount = data.get("amount")
+            currency = data.get("currency") or "USDT"
+            wallet_address = data.get("wallet_address")
             
-            # Determine price and label
             price = 0
             label = ""
             if plan_id in TARIFS:
                 price = TARIFS[plan_id]["amount"]
                 label = TARIFS[plan_id]["label"]
             elif plan_id.startswith("mentorship_"):
-                # mentorship_{mentor}_{type}
                 parts = plan_id.split("_")
                 mentor_code = parts[1]
-                payment_type = parts[2] # full or half
+                payment_type = parts[2]
                 
                 mentor = MENTORS.get(mentor_code)
                 if mentor:
@@ -130,30 +154,37 @@ async def process_webapp_data(message: types.Message):
                     if payment_type == "half":
                         price = price / 2
                         label = f"{mentor['name']} (50%)"
-            
-            # Create payment record
+
+            if isinstance(amount, (int, float)):
+                price = amount
+            elif isinstance(amount, str):
+                try:
+                    price = float(amount)
+                except Exception:
+                    pass
+
             async with async_session() as session:
                 payment = Payment(
                     user_id=message.from_user.id,
                     amount=price,
-                    currency="USDT",
+                    currency=currency,
                     product_type=plan_id,
                     status="manual_pending",
                     crypto_pay_id=f"manual_{message.from_user.id}_{int(datetime.utcnow().timestamp())}"
                 )
                 session.add(payment)
                 await session.commit()
-                # Refresh to get payment.id
                 await session.refresh(payment)
                 payment_id = payment.id
 
-            # For manual payment, notify admins with buttons
             admin_kb = types.InlineKeyboardMarkup(inline_keyboard=[
                 [
-                    types.InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"admin_pay_approve_{payment_id}"),
+                    types.InlineKeyboardButton(text="Оплата пришла", callback_data=f"admin_pay_received_{payment_id}"),
                     types.InlineKeyboardButton(text="❌ Отклонить", callback_data=f"admin_pay_reject_{payment_id}")
                 ]
             ])
+
+            wallet_line = f"\n🏦 Кошелек: `{wallet_address}`" if wallet_address else ""
 
             for admin_id in config.admins:
                 try:
@@ -161,20 +192,39 @@ async def process_webapp_data(message: types.Message):
                         admin_id,
                         f"🔔 **ЗАЯВКА НА РУЧНУЮ ОПЛАТУ (WebApp)**\n\n"
                         f"👤 Пользователь: {message.from_user.full_name} (@{message.from_user.username or 'No username'})\n"
+                        f"🆔 ID: `{message.from_user.id}`\n"
                         f"📦 Тариф: {label or plan_id}\n"
-                        f"💰 Сумма: {price} USDT\n"
-                        f"💳 Метод: {method.upper()}\n"
-                        f"🆔 ID Заявки: `{payment_id}`",
+                        f"💰 Сумма: {price} {currency}\n"
+                        f"🕒 Дата: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
+                        f"💳 Метод: {method.upper()}{wallet_line}\n"
+                        f"🧾 ID Заявки: `{payment_id}`",
                         parse_mode="Markdown",
                         reply_markup=admin_kb
                     )
                 except Exception as e:
                     logging.error(f"Failed to notify admin {admin_id}: {e}")
-            
-            await message.answer(
-                "✅ Заявка на оплату принята!\n\n"
-                "Администратор свяжется с вами для подтверждения платежа."
-            )
+
+            await message.answer("✅ Ваша заявка на оплату принята!\nОжидайте подтверждения администратором.")
+
+        elif action == "chat_message":
+            mentor_id = data.get("mentor_id")
+            text = data.get("text")
+            if not mentor_id or not text:
+                return
+
+            for admin_id in config.admins:
+                try:
+                    await message.bot.send_message(
+                        admin_id,
+                        f"💬 **Новое сообщение из WebApp**\n\n"
+                        f"👤 Пользователь: {message.from_user.full_name} (@{message.from_user.username or 'No username'})\n"
+                        f"🆔 ID: `{message.from_user.id}`\n"
+                        f"👨‍🏫 Чат: {mentor_id}\n"
+                        f"✉️ Сообщение:\n{text}",
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to forward chat message to admin {admin_id}: {e}")
 
     except Exception as e:
         logging.error(f"Error processing WebApp data: {e}")

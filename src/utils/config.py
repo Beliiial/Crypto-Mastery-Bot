@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     STUDENT_CHAT_ID: int = 0
     TRIAL_FILE_ID: str = "DEFAULT_FILE_ID"
     TON_WALLET: str = "UQBZd9VWbTypz4dy7D5-7Ve7nPTS9eKZ-k9AH3H2hf8rewE5"  # USDT TON and TON network
+    WEBAPP_API_HOST: str = "0.0.0.0"
+    WEBAPP_API_PORT: int = 8000
 
     @property
     def admins(self) -> List[int]:
