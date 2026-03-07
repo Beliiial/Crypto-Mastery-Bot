@@ -273,9 +273,13 @@ async def handle_get_users(request: web.Request):
             return web.json_response({"ok": False, "error": str(e)}, status=500)
 
     async with async_session() as session:
-        stmt = select(User).order_by(User.created_at.desc()).limit(100)
-        result = await session.execute(stmt)
-        users = result.scalars().all()
+        try:
+            stmt = select(User).order_by(User.created_at.desc()).limit(100)
+            result = await session.execute(stmt)
+            users = result.scalars().all() or []
+        except Exception as e:
+            logging.error(f"Error fetching users: {e}")
+            users = []
         
         users_data = []
         now = datetime.utcnow()
@@ -728,7 +732,13 @@ async def start_webapp_api(bot: Bot):
     @web.middleware
     async def logging_middleware(request, handler):
         logging.info(f"WEB REQUEST: {request.method} {request.path}")
-        return await handler(request)
+        try:
+            response = await handler(request)
+            logging.info(f"WEB RESPONSE: {response.status} for {request.path}")
+            return response
+        except Exception as e:
+            logging.error(f"WEB API ERROR: {e} at {request.path}", exc_info=True)
+            return web.json_response({"ok": False, "error": str(e)}, status=500)
 
     @web.middleware
     async def cors_middleware(request: web.Request, handler):
@@ -742,6 +752,7 @@ async def start_webapp_api(bot: Bot):
         try:
             response = await handler(request)
             response.headers["Access-Control-Allow-Origin"] = "*"
+            # Ensure headers are strings, not tuples (fixing previous comma error)
             response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
             response.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
             return response
