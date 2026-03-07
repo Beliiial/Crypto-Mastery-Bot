@@ -685,6 +685,9 @@ async def handle_admin_broadcast(request: web.Request):
 async def handle_health(request: web.Request):
     return web.json_response({"status": "healthy", "uptime": "ok"})
 
+async def handle_health(request: web.Request):
+    return web.json_response({"status": "healthy", "uptime": "ok"})
+
 async def handle_root(request: web.Request):
     return web.json_response({"message": "Gatee Bot API is running"})
 
@@ -726,6 +729,27 @@ async def start_webapp_api(bot: Bot):
     async def logging_middleware(request, handler):
         logging.info(f"WEB REQUEST: {request.method} {request.path}")
         return await handler(request)
+
+    @web.middleware
+    async def cors_middleware(request: web.Request, handler):
+        if request.method == "OPTIONS":
+            return web.Response(headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+                "Access-Control-Max-Age": "86400"
+            })
+        try:
+            response = await handler(request)
+            response.headers["Access-Control-Allow-Origin"] = "*"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+            response.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
+            return response
+        except Exception as e:
+            logging.error(f"Request failed: {e}")
+            return web.json_response({"ok": False, "error": str(e)}, status=500, headers={
+                "Access-Control-Allow-Origin": "*"
+            })
 
     app.middlewares.append(cors_middleware)
     app.middlewares.append(logging_middleware)
