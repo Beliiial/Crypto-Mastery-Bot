@@ -740,27 +740,39 @@ async def start_webapp_api(bot: Bot):
             logging.error(f"WEB API ERROR: {e} at {request.path}", exc_info=True)
             return web.json_response({"ok": False, "error": str(e)}, status=500)
 
+    # CORS Middleware: Handle preflight and add headers to all responses
     @web.middleware
-    async def cors_middleware(request: web.Request, handler):
+    async def cors_middleware(request, handler):
         if request.method == "OPTIONS":
             return web.Response(headers={
                 "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, GET, OPTIONS, PUT, DELETE",
                 "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
-                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
                 "Access-Control-Max-Age": "86400"
             })
+        
         try:
             response = await handler(request)
             response.headers["Access-Control-Allow-Origin"] = "*"
-            # Ensure headers are strings, not tuples (fixing previous comma error)
+            response.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS, PUT, DELETE"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
-            response.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
             return response
+        except web.HTTPException as ex:
+            ex.headers["Access-Control-Allow-Origin"] = "*"
+            ex.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS, PUT, DELETE"
+            ex.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+            raise ex
         except Exception as e:
-            logging.error(f"Request failed: {e}")
-            return web.json_response({"ok": False, "error": str(e)}, status=500, headers={
-                "Access-Control-Allow-Origin": "*"
-            })
+            logging.error(f"CORS Middleware Error: {e}")
+            return web.json_response(
+                {"ok": False, "error": str(e)}, 
+                status=500, 
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "POST, GET, OPTIONS, PUT, DELETE",
+                    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With"
+                }
+            )
 
     app.middlewares.append(cors_middleware)
     app.middlewares.append(logging_middleware)
@@ -775,11 +787,9 @@ async def start_webapp_api(bot: Bot):
     async def api_dispatcher(request):
         import re
         # Normalize path: remove any number of leading slashes and collapse internal ones
-        # Example: ////api/profile -> /api/profile
-        path = request.path
-        normalized_path = "/" + re.sub(r'/+', '/', path).lstrip('/')
-        if len(normalized_path) > 1:
-            normalized_path = normalized_path.rstrip('/')
+        normalized_path = "/" + re.sub(r'/+', '/', path).strip('/')
+        
+        logging.info(f"Normalized path: '{normalized_path}'")
         
         routes = {
             "/": handle_root,
@@ -798,7 +808,8 @@ async def start_webapp_api(bot: Bot):
             "/api/admin/broadcast": handle_admin_broadcast
         }
         
-        handler = routes.get(normalized_path)
+        # Try exact match first, then without leading slash
+        handler = routes.get(normalized_path) or routes.get("/" + normalized_path.lstrip('/'))
         if handler:
             # Allow POST/GET for all API handlers, and handle OPTIONS via middleware
             if request.method in ["POST", "GET"]:
