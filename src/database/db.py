@@ -45,6 +45,42 @@ async def init_db():
             except Exception:
                 pass # Column likely exists
 
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN has_active_subscription BOOLEAN DEFAULT 0"))
+                logging.info("Added has_active_subscription column to users table")
+            except Exception:
+                pass # Column likely exists
+
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN trial_received BOOLEAN DEFAULT 0"))
+                logging.info("Added trial_received column to users table")
+            except Exception:
+                pass # Column likely exists
+
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN balance FLOAT DEFAULT 0.0"))
+                logging.info("Added balance column to users table")
+            except Exception:
+                pass # Column likely exists
+
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN referral_id BIGINT"))
+                logging.info("Added referral_id column to users table")
+            except Exception:
+                pass # Column likely exists
+
+            try:
+                await conn.execute(text("ALTER TABLE messages ADD COLUMN media_url TEXT"))
+                logging.info("Added media_url column to messages table")
+            except Exception:
+                pass # Column likely exists
+
+            try:
+                await conn.execute(text("ALTER TABLE messages ADD COLUMN is_read BOOLEAN DEFAULT 0"))
+                logging.info("Added is_read column to messages table")
+            except Exception:
+                pass # Column likely exists
+
 async def get_session() -> AsyncSession:
     async with async_session() as session:
         yield session
