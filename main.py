@@ -786,6 +786,11 @@ async def start_webapp_api(bot: Bot):
     # Generic dispatcher to handle multiple slashes and route correctly
     async def api_dispatcher(request):
         import re
+        # Define path and method locally to avoid NameError
+        path = request.path
+        method = request.method
+        logging.info(f"API REQUEST: {method} {path}")
+        
         # Normalize path: remove any number of leading slashes and collapse internal ones
         normalized_path = "/" + re.sub(r'/+', '/', path).strip('/')
         
